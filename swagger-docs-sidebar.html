@@ -1,0 +1,171 @@
+<script type="text/javascript">
+    (function () {
+        RED.plugins.registerPlugin("swagger-docs-sidebar", {
+            onadd: async function () {
+                console.log(RED);
+                const content = document.createElement("div");
+                content.style.position = "relative";
+                content.style.height = "100%";
+                content.className = "red-ui-swagger-docs-sidebar";
+
+                RED.actions.add("core:show-swagger-docs-sidebar-tab", function () {
+                    RED.sidebar.show("swagger-docs-sidebar");
+                });
+
+                const input = document.createElement("input");
+                input.type = "text";
+                input.placeholder = "Enter URL for your JSON Swagger Docs";
+                input.style.marginBottom = "10px";
+                input.style.marginTop = "10px";
+
+                if (RED.settings.get("swagger-docs-sidebar-url")) {
+                    input.value = RED.settings.get("swagger-docs-sidebar-url");
+                }
+
+                content.appendChild(input);
+
+                const saveBtn = document.createElement("button");
+
+                saveBtn.style.display = 'inline-block';
+                saveBtn.style.padding = '10px 20px';
+                saveBtn.style.backgroundColor = '#28a745';
+                saveBtn.style.color = '#fff';
+                saveBtn.style.border = 'none';
+                saveBtn.style.borderRadius = '4px';
+                saveBtn.style.textAlign = 'center';
+                saveBtn.style.textDecoration = 'none';
+                saveBtn.style.fontSize = '16px';
+                saveBtn.style.cursor = 'pointer';
+                saveBtn.style.marginLeft = '10px';
+                saveBtn.textContent = "Save";
+
+                content.appendChild(saveBtn);
+
+                saveBtn.addEventListener("click", function () {
+                    const url = input.value;
+                    if (url != "") {
+                        RED.settings.set("swagger-docs-sidebar-url", url);
+                        alert("URL saved: " + url);
+                    }
+                });
+
+                if (RED.settings.get("swagger-docs-sidebar-url")) {
+                    input.value = RED.settings.get("swagger-docs-sidebar-url");
+
+                    const swaggerContainer = document.createElement("div");
+                    swaggerContainer.id = "swagger-ui";
+                    content.appendChild(swaggerContainer);
+
+                    const swaggerCssLink = document.createElement("link");
+                    swaggerCssLink.rel = "stylesheet";
+                    swaggerCssLink.type = "text/css";
+                    swaggerCssLink.href = "https://unpkg.com/swagger-ui-dist@4.5.0/swagger-ui.css";
+
+                    const swaggerJsLink = document.createElement("script");
+                    swaggerJsLink.src = "https://unpkg.com/swagger-ui-dist@4.5.0/swagger-ui-bundle.js";
+                    swaggerJsLink.crossOrigin = "anonymous";
+
+                    const swaggerSpecUrl = RED.settings.get("swagger-docs-sidebar-url");
+
+                    let jsonSwaggerDoc = undefined;
+
+                    try {
+                        const response = await fetch(swaggerSpecUrl, { method: 'GET' });
+
+                        if (response.ok) {
+                            try {
+                                jsonSwaggerDoc = await response.json();
+                            }
+                            catch (error) {
+                                console.log('Ocorreu um erro ao processar a resposta como JSON: ' + error);
+                            }
+                        }
+                        else {
+                            console.log('Erro ao fazer a solicitação: ' + response.status);
+                        }
+                    }
+                    catch (error) {
+                        console.log('Ocorreu um erro ao fazer a solicitação: ' + error);
+                    }
+
+                    if (!jsonSwaggerDoc) {
+                        jsonSwaggerDoc = {
+                            openapi: "3.0.3",
+                            info: {
+                                title: "Basic Swagger",
+                            },
+                            tags: [],
+                            paths: {}
+                        };
+                    }
+
+                    try {
+                        const response = await fetch('./http-api/swagger.json', { method: 'GET' });
+                        if (response.ok) {
+                            try {
+                                const data = await response.json();
+
+                                if (!jsonSwaggerDoc['tags']) {
+                                    jsonSwaggerDoc['tags'] = [];
+                                }
+
+                                jsonSwaggerDoc['tags'].push({
+                                    "name": "Undocumented HTTP nodes",
+                                    "description": "HTTP nodes not found in the provided documentation"
+                                });
+
+                                for (const nodeInfos of data) {
+                                    if (!jsonSwaggerDoc.paths[nodeInfos.path] || (jsonSwaggerDoc.paths[nodeInfos.path] && !jsonSwaggerDoc.paths[nodeInfos.path][nodeInfos.method])) {
+                                        jsonSwaggerDoc.paths[nodeInfos.path] = jsonSwaggerDoc.paths[nodeInfos.path] || {};
+                                        jsonSwaggerDoc.paths[nodeInfos.path][nodeInfos.method] = {
+                                            "tags": [
+                                                "Undocumented HTTP nodes"
+                                            ],
+                                            "summary": `[${nodeInfos.method}]${nodeInfos.path}`,
+                                            "description": `[${nodeInfos.method}]${nodeInfos.path}`,
+                                        };
+                                    }
+                                }
+                            }
+                            catch (error) {
+                                console.log('Ocorreu um erro ao processar a resposta como JSON: ' + error);
+                            }
+                        }
+                        else {
+                            console.log('Erro ao fazer a solicitação: ' + response.status);
+                        }
+                    }
+                    catch (error) {
+                        console.log('Ocorreu um erro ao fazer a solicitação: ' + error);
+                    }
+
+                    swaggerJsLink.addEventListener("load", function () {
+                        window.ui = SwaggerUIBundle({
+                            //Comment out the following line and uncomment the next line if you don't want to include the http-in nodes in the provided documentation.
+                            spec: jsonSwaggerDoc,
+                            //url: swaggerSpecUrl,
+                            dom_id: '#swagger-ui',
+                            presets: [SwaggerUIBundle.presets.apis],
+                            layout: "BaseLayout",
+                            deepLinking: true,
+                            showExtensions: true,
+                            showCommonExtensions: true
+                        });
+                    });
+
+                    document.head.appendChild(swaggerCssLink);
+                    document.head.appendChild(swaggerJsLink);
+                }
+
+                RED.sidebar.addTab({
+                    id: "swagger-docs-sidebar",
+                    name: "Swagger-docs",
+                    label: "Swagger-docs",
+                    iconClass: "fa fa-file-text",
+                    content: content,
+                    action: "core:show-swagger-docs-sidebar-tab"
+                });
+            }
+        });
+    })();
+</script>
