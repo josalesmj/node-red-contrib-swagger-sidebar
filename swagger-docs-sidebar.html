@@ -2,7 +2,7 @@
     (function () {
         RED.plugins.registerPlugin("swagger-docs-sidebar", {
             onadd: async function () {
-                console.log(RED);
+                const jsonInfos = {};
                 const content = document.createElement("div");
                 content.style.position = "relative";
                 content.style.height = "100%";
@@ -72,20 +72,14 @@
                     try {
                         const response = await fetch(swaggerSpecUrl, { method: 'GET' });
 
-                        if (response.ok) {
-                            try {
-                                jsonSwaggerDoc = await response.json();
-                            }
-                            catch (error) {
-                                console.log('Ocorreu um erro ao processar a resposta como JSON: ' + error);
-                            }
+                        if (!response.ok) {
+                            console.log(`Erro ao requisitar url:${swaggerSpecUrl} StatusCode:${response.status}`);
+                            throw new Error(`Erro ao requisitar url:${swaggerSpecUrl} StatusCode:${response.status}`);
                         }
-                        else {
-                            console.log('Erro ao fazer a solicitação: ' + response.status);
-                        }
+                        jsonSwaggerDoc = await response.json();
                     }
                     catch (error) {
-                        console.log('Ocorreu um erro ao fazer a solicitação: ' + error);
+                        console.log('Ocorreu um erro na requisição: ' + error);
                     }
 
                     if (!jsonSwaggerDoc) {
@@ -100,58 +94,81 @@
                     }
 
                     try {
-                        const response = await fetch('./http-api/swagger.json', { method: 'GET' });
-                        if (response.ok) {
-                            try {
-                                const data = await response.json();
+                        const response = await fetch('./http-api/nodes-json', { method: 'GET' });
+                        if (!response.ok) {
+                            console.log(`Erro ao requisitar url:http-api/nodes-json StatusCode:${response.status}`);
+                            throw new Error(`Erro ao requisitar url:http-api/nodes-json StatusCode:${response.status}`)
+                        }
 
-                                if (!jsonSwaggerDoc['tags']) {
-                                    jsonSwaggerDoc['tags'] = [];
-                                }
+                        const data = await response.json();
 
-                                jsonSwaggerDoc['tags'].push({
-                                    "name": "Undocumented HTTP nodes",
-                                    "description": "HTTP nodes not found in the provided documentation"
-                                });
+                        if (!jsonSwaggerDoc['tags']) {
+                            jsonSwaggerDoc['tags'] = [];
+                        }
 
-                                for (const nodeInfos of data) {
-                                    if (!jsonSwaggerDoc.paths[nodeInfos.path] || (jsonSwaggerDoc.paths[nodeInfos.path] && !jsonSwaggerDoc.paths[nodeInfos.path][nodeInfos.method])) {
-                                        jsonSwaggerDoc.paths[nodeInfos.path] = jsonSwaggerDoc.paths[nodeInfos.path] || {};
-                                        jsonSwaggerDoc.paths[nodeInfos.path][nodeInfos.method] = {
-                                            "tags": [
-                                                "Undocumented HTTP nodes"
-                                            ],
-                                            "summary": `[${nodeInfos.method}]${nodeInfos.path}`,
-                                            "description": `[${nodeInfos.method}]${nodeInfos.path}`,
-                                        };
-                                    }
-                                }
-                            }
-                            catch (error) {
-                                console.log('Ocorreu um erro ao processar a resposta como JSON: ' + error);
+                        jsonSwaggerDoc['tags'].push({
+                            "name": "Undocumented HTTP nodes",
+                            "description": "HTTP nodes not found in the provided documentation"
+                        });
+
+                        for (const nodeInfos of data) {
+                            jsonInfos[`[${nodeInfos.method}]${nodeInfos.path}`] = {
+                                method: nodeInfos.method,
+                                nodeId: nodeInfos.id
+                            };
+                            if (!jsonSwaggerDoc.paths[nodeInfos.path] || (jsonSwaggerDoc.paths[nodeInfos.path] && !jsonSwaggerDoc.paths[nodeInfos.path][nodeInfos.method])) {
+                                jsonSwaggerDoc.paths[nodeInfos.path] = jsonSwaggerDoc.paths[nodeInfos.path] || {};
+                                jsonSwaggerDoc.paths[nodeInfos.path][nodeInfos.method] = {
+                                    "tags": [
+                                        "Undocumented HTTP nodes"
+                                    ],
+                                    "summary": `[${nodeInfos.method}]${nodeInfos.path}`,
+                                    "description": `[${nodeInfos.method}]${nodeInfos.path}`,
+                                };
                             }
                         }
-                        else {
-                            console.log('Erro ao fazer a solicitação: ' + response.status);
+
+                        swaggerJsLink.addEventListener("load", function () {
+                            window.ui = SwaggerUIBundle({
+                                //Comment out the following line and uncomment the next line if you don't want to include the http-in nodes in the provided documentation.
+                                spec: jsonSwaggerDoc,
+                                //url: swaggerSpecUrl,
+                                dom_id: '#swagger-ui',
+                                presets: [SwaggerUIBundle.presets.apis],
+                                layout: "BaseLayout",
+                                deepLinking: true,
+                                showExtensions: true,
+                                showCommonExtensions: true
+                            });
+                        });
+
+                        function addClickEventToRoutes() {
+                            const operationContainers = document.querySelectorAll('.opblock-summary-control');
+                            operationContainers.forEach(async container => {
+                                const method = container.getElementsByClassName("opblock-summary-method")[0].innerHTML.toLowerCase();
+                                const path = container.getElementsByClassName("opblock-summary-path")[0].getAttribute("data-path");
+                                const nodeInfos = jsonInfos[`[${method}]${path}`];
+                                if (nodeInfos) {
+                                    const btn = document.createElement('button')
+                                    btn.innerHTML = 'Go to Node';
+                                    btn.classList = "opblock-summary-method";
+                                    btn.addEventListener('click', () => {
+                                        RED.view.reveal(nodeInfos.nodeId);
+                                        RED.view.select(nodeInfos.nodeId);
+                                    });
+                                    const arrow = container.lastChild;
+                                    container.removeChild(arrow);
+                                    container.appendChild(btn);
+                                }
+                            });
                         }
+                        setTimeout(() => {
+                            addClickEventToRoutes();
+                        }, 1000);
                     }
                     catch (error) {
                         console.log('Ocorreu um erro ao fazer a solicitação: ' + error);
                     }
-
-                    swaggerJsLink.addEventListener("load", function () {
-                        window.ui = SwaggerUIBundle({
-                            //Comment out the following line and uncomment the next line if you don't want to include the http-in nodes in the provided documentation.
-                            spec: jsonSwaggerDoc,
-                            //url: swaggerSpecUrl,
-                            dom_id: '#swagger-ui',
-                            presets: [SwaggerUIBundle.presets.apis],
-                            layout: "BaseLayout",
-                            deepLinking: true,
-                            showExtensions: true,
-                            showCommonExtensions: true
-                        });
-                    });
 
                     document.head.appendChild(swaggerCssLink);
                     document.head.appendChild(swaggerJsLink);
